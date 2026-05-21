@@ -15,6 +15,9 @@ const backends = [
         base: "https://rule34-api.netlify.app/posts",
         sort: "sort:",
         preview_name: "preview_url",
+        sample_name: "sample_url",
+        hq_name: "file_url",
+        free_tags: [],
         max_tags: 99999,
     },
     {
@@ -22,18 +25,32 @@ const backends = [
         base: "https://danbooru.donmai.us/posts.json",
         sort: "order:",
         preview_name: "preview_file_url",
+        sample_name: "sample_url",
+        hq_name: "file_url",
+        free_tags: ["score", "rating"],
         max_tags: 2,
-    },
+    }
 ];
+
+const LIMIT_IMAGES = 20;
+const IMAGE_TIME_S = 9;
+const ASPECT_RATIO_LIMIT = 2.5;
+const DIMENSION_LIMIT = 6000;
 
 let images = [];
 let display_idx = 0;
 let busy = 0;
 let just_searched = 0;
+let dynamic_height = 1080;
 
 function image_make(info, backend) {
+    console.log(info)
     if (info.file_url.endsWith("zip")) return;
+    if (info.width / info.height > ASPECT_RATIO_LIMIT) return;
+    if (info.height / info.width > ASPECT_RATIO_LIMIT) return;
+    if (info.width > DIMENSION_LIMIT || info.height > DIMENSION_LIMIT) return;
     let result = {};
+    result.hq_url = info[backend.hq_name];
     result.info = info;
     result.is_video = info.file_url.endsWith("mp4");
     if (result.is_video) {
@@ -42,6 +59,9 @@ function image_make(info, backend) {
         result.element.muted = true;
     } else {
         result.element = document.createElement("img");
+        if (info.sample_height >= dynamic_height) {
+            result.hq_url = info[backend.sample_name];
+        }
     }
     result.element.classList.add("pornimage");
     result.element.classList.add(backend.name);
@@ -53,18 +73,29 @@ function image_make(info, backend) {
 function image_addsources(img) {
     if (img.is_video) {
         img.element.poster = img.info[img.backend.preview_name];
-        img.element.src = img.info.file_url;
+        img.element.src = img.hq_url;
         img.element.play();
     } else {
         img.element.onload = () => {
-            img.element.src = img.info.file_url;
+            img.element.src = img.hq_url;
         }
         img.element.src = img.info[img.backend.preview_name];
     }
 }
 
+function makepadding() {
+    let element = document.createElement("div");
+    element.classList.add("pornpadding");
+    return element;
+}
+
 function next() {
-    if (display_idx + 1 >= images.length) return;
+    if (display_idx + 1 >= images.length) {
+        setTimeout(() => {
+            search();
+        }, 10);
+        return;
+    }
     if (busy) return;
     busy = 1;
     document.getElementById("progress").value = 0;
@@ -76,23 +107,29 @@ function next() {
         let c = document.createElement("div");
         c.classList.add("porncontainer");
         image_addsources(images[display_idx]);
+        c.appendChild(makepadding());
         c.appendChild(images[display_idx].element);
+        c.appendChild(makepadding());
         document.getElementById("porn").appendChild(c);
         busy = 0;
     } else {
         display_idx ++;
-        document.getElementById("porn").children[0].classList.add("right");
+        //document.getElementById("porn").children[0].classList.add("right");
+        document.getElementById("porn2").appendChild(document.getElementById("porn").children[0]);
         let c = document.createElement("div");
         c.classList.add("left");
         c.classList.add("porncontainer");
         image_addsources(images[display_idx]);
+        c.appendChild(makepadding());
         c.appendChild(images[display_idx].element);
+        c.appendChild(makepadding());
         document.getElementById("porn").appendChild(c);
         setTimeout(() => {
             c.classList.remove("left");
-        }, 20);
+            document.getElementById("porn2").children[0].classList.add("right");
+        }, 50);
         setTimeout(() => {
-            document.getElementById("porn").removeChild(document.getElementById("porn").children[0]);
+            document.getElementById("porn2").removeChild(document.getElementById("porn2").children[0]);
             busy = 0;
         }, 1000);
     }
@@ -111,26 +148,41 @@ function prev() {
         let c = document.createElement("div");
         c.classList.add("porncontainer");
         image_addsources(images[display_idx]);
+        c.appendChild(makepadding());
         c.appendChild(images[display_idx].element);
+        c.appendChild(makepadding());
         document.getElementById("porn").appendChild(c);
         busy = 0;
     } else {
         display_idx --;
-        document.getElementById("porn").children[0].classList.add("left");
+        //document.getElementById("porn").children[0].classList.add("left");
+        document.getElementById("porn2").appendChild(document.getElementById("porn").children[0]);
         let c = document.createElement("div");
         c.classList.add("right");
         c.classList.add("porncontainer");
         image_addsources(images[display_idx]);
+        c.appendChild(makepadding());
         c.appendChild(images[display_idx].element);
+        c.appendChild(makepadding());
         document.getElementById("porn").appendChild(c);
         setTimeout(() => {
             c.classList.remove("right");
-        }, 20);
+            document.getElementById("porn2").children[0].classList.add("left");
+        }, 50);
         setTimeout(() => {
-            document.getElementById("porn").removeChild(document.getElementById("porn").children[0]);
+            document.getElementById("porn2").removeChild(document.getElementById("porn2").children[0]);
             busy = 0;
         }, 1000);
     }
+}
+
+function is_tag_free(tag, free_tags) {
+    for (let i = 0; i < free_tags.length; i++) {
+        if (tag.startsWith(free_tags[i] + ":")) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function search() {
@@ -139,7 +191,6 @@ function search() {
     for (let i = 0; i < tags.length; i++) {
         tags[i] = tags[i].trim();
     }
-    console.log(tags)
     just_searched = 1;
 
     images = [];
@@ -155,10 +206,28 @@ function search() {
     }
 
     for (let n = 0; n < backends.length; n++) {
-        httpGetAsync(backends[n].base + "?limit=20&pid=0&tags=" + tags.join("+").replace("sort:", backends[n].sort), (json) => {
+        let len = tags.length;
+        for (let i = 0; i < tags.length; i++) {
+            if (is_tag_free(tags[i], backends[n].free_tags)) {
+                len -= 1;
+            }
+        }
+
+        let custom_tags = [];
+        let non_free_tags = 0
+        for (let i = 0; i < tags.length; i++) {
+            if (!is_tag_free(tags[i], backends[n].free_tags)) {
+                if (non_free_tags < backends[n].max_tags) {
+                    non_free_tags += 1;
+                    custom_tags.push(tags[i]);
+                }
+            } else {
+                custom_tags.push(tags[i]);
+            }
+        }
+        httpGetAsync(backends[n].base + "?limit=" + LIMIT_IMAGES + "&page=dapi&q=index&json=1&pid=0&tags=" + custom_tags.join("+").replace("sort:", backends[n].sort), (json) => {
             const j = JSON.parse(json);
             console.log("response from ", backends[n].name);
-            console.log(j);
             for (let i = 0; i < j.length; i++) {
                 image_make(j[i], backends[n]);
             }
@@ -172,11 +241,7 @@ function search() {
 }
 
 function tickslow() {
-    let pc = document.getElementsByClassName("porncontainer");
-    let h = document.getElementById("porn").offsetHeight;
-    for (let i = 0; i < pc.length; i++) {
-        pc[i].style.height = (h-8) + "px";
-    }
+    dynamic_height = document.body.offsetHeight;
 }
 
 function tick() {
@@ -195,7 +260,7 @@ function tick() {
             }
         } else {
             p.max = 1000;
-            p.value += 4;
+            p.value += 1000/(IMAGE_TIME_S * 1000 / 20);
             if (p.value >= 1000) {
                 next();
             }
@@ -217,12 +282,12 @@ document.onkeypress = (e) => {
 }
 
 setInterval(() => {
-    tick();
-}, 20);
+    tickslow();
+}, 500);
 
 setInterval(() => {
-    tickslow();
-}, 50);
+    tick();
+}, 20);
 
 setTimeout(() => {
     search();
