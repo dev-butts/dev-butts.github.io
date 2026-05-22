@@ -16,20 +16,18 @@ body {
 
 .pornimage {
 	object-fit: contain;
-	/*width: 100%;
-	height: 100%;*/
-	margin:-2px;
+	margin:0px;
+	flex: 0;
+}
+
+.pornpadding {
+	flex: 1;
 }
 
 .porncontainer {
 	margin: 0px;
 	padding: 0px;
-	width: 100vw;
-	/*position: absolute;
-	left: 0; 
-	right: 0; 
-	margin-inline: auto; 
-	width: fit-content;*/
+	width: 100%;
 
 	-webkit-transition: transform 1s, opacity 1s;
 	-moz-transition: transform 1s, opacity 1s;
@@ -42,10 +40,6 @@ body {
 	align-items: stretch;
 }
 
-.pornpadding {
-	flex: 1;
-}
-
 .porncontainer.left {
 	transform: translate(-100vw, 30vh) rotate(-15deg);
 	opacity: 0;
@@ -54,10 +48,6 @@ body {
 .porncontainer.right {
 	transform: translate(100vw, 30vh) rotate(15deg);
 	opacity: 0;
-}
-
-.pornimage {
-	flex: 0;
 }
 
 .pornimage.rule34 {
@@ -122,4 +112,24 @@ body {
 	text-align: center;
 	justify-content: center;
 	align-items: center;
+}
+
+#leftarrow {
+	position: fixed;
+	left: 0px;
+	top: 0px;
+	height: 100%;
+	width: calc(min(5vw, 100px));
+	background: hsl(114, 36%, 50%);
+	cursor: grab;
+}
+
+#rightarrow {
+	position: fixed;
+	right: 0px;
+	top: 0px;
+	height: 100%;
+	width: calc(min(5vw, 100px));
+	background: hsl(114, 36%, 50%);
+	cursor: grab;
 }

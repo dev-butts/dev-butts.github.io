@@ -37,14 +37,18 @@ const IMAGE_TIME_S = 9;
 const ASPECT_RATIO_LIMIT = 2.5;
 const DIMENSION_LIMIT = 6000;
 
+let query_stack = [];
 let images = [];
 let display_idx = 0;
 let busy = 0;
 let just_searched = 0;
 let dynamic_height = 1080;
+let last_artist = "";
+let is_paused = 0;
 
 function image_make(info, backend) {
     console.log(info)
+    if (!info.hasOwnProperty("file_url")) return;
     if (info.file_url.endsWith("zip")) return;
     if (info.width / info.height > ASPECT_RATIO_LIMIT) return;
     if (info.height / info.width > ASPECT_RATIO_LIMIT) return;
@@ -59,9 +63,6 @@ function image_make(info, backend) {
         result.element.muted = true;
     } else {
         result.element = document.createElement("img");
-        if (info.sample_height >= dynamic_height) {
-            result.hq_url = info[backend.sample_name];
-        }
     }
     result.element.classList.add("pornimage");
     result.element.classList.add(backend.name);
@@ -71,13 +72,37 @@ function image_make(info, backend) {
 }
 
 function image_addsources(img) {
+    if (img.info.hasOwnProperty("tag_string_artist")) {
+        document.getElementById("asearch").disabled = false;
+        last_artist = img.info.tag_string_artist;
+        console.log(last_artist)
+    } else if (img.info.hasOwnProperty("tag_info")) {
+        let dis = true;
+        for (let i = 0; i < img.info.tag_info.length; i++) {
+            if (img.info.tag_info[i].type == "artist") {
+                last_artist = img.info.tag_info[i].tag;
+                dis = false;
+            }
+        }
+        if (!dis) {
+            console.log(last_artist)
+        }
+        document.getElementById("asearch").disabled = dis;
+    } else {
+        document.getElementById("asearch").disabled = true;
+    }
+    img.info.last_artist
     if (img.is_video) {
         img.element.poster = img.info[img.backend.preview_name];
         img.element.src = img.hq_url;
         img.element.play();
     } else {
         img.element.onload = () => {
-            img.element.src = img.hq_url;
+            if (img.info.sample_height >= dynamic_height) {
+                img.element.src = img.info[img.backend.sample_name];
+            } else {
+                img.element.src = img.hq_url;
+            }
         }
         img.element.src = img.info[img.backend.preview_name];
     }
@@ -187,6 +212,7 @@ function is_tag_free(tag, free_tags) {
 
 function search() {
     let query = document.getElementById("query").value;
+    query_stack.push(query);
     let tags = query.split(",");
     for (let i = 0; i < tags.length; i++) {
         tags[i] = tags[i].trim();
@@ -198,9 +224,13 @@ function search() {
     if (document.getElementById("porn").children.length > 0) {
         for (let i = 0; i < document.getElementById("porn").children.length; i++) {
             let c = document.getElementById("porn").children[i];
-            c.classList.add("right");
+            document.getElementById("porn2").appendChild(c);
             setTimeout(() => {
-                document.getElementById("porn").removeChild(c);
+                c.classList.add("right");
+            }, 50);
+            setTimeout(() => {
+                document.getElementById("porn2").removeChild(c);
+                busy = 0;
             }, 1000);
         }
     }
@@ -225,9 +255,15 @@ function search() {
                 custom_tags.push(tags[i]);
             }
         }
-        httpGetAsync(backends[n].base + "?limit=" + LIMIT_IMAGES + "&page=dapi&q=index&json=1&pid=0&tags=" + custom_tags.join("+").replace("sort:", backends[n].sort), (json) => {
-            const j = JSON.parse(json);
+        let uri = backends[n].base + "?limit=" + LIMIT_IMAGES + "&page=dapi&q=index&json=1&pid=0&tags=" + custom_tags.join("+").replace("sort:", backends[n].sort);
+        console.log(uri, encodeURI(uri))
+        httpGetAsync(encodeURI(uri), (json) => {
+            if (json.length == 0) {
+                just_searched = 0;
+                return;
+            }
             console.log("response from ", backends[n].name);
+            const j = JSON.parse(json);
             for (let i = 0; i < j.length; i++) {
                 image_make(j[i], backends[n]);
             }
@@ -237,6 +273,29 @@ function search() {
             }
             just_searched = 0;
         });
+    }
+}
+
+function morebyartist() {
+    document.getElementById("query").value = last_artist + ", sort:random";
+    search();
+}
+
+function prevsearch() {
+    if (query_stack.length >= 2) {
+        query_stack.pop();
+        document.getElementById("query").value = query_stack[query_stack.length-1];
+        search();
+        query_stack.pop();
+    }
+}
+
+function pauseunpause() {
+    is_paused = !is_paused;
+    if (is_paused) {
+        document.getElementById("pause").innerHTML = "Unpause";
+    } else {
+        document.getElementById("pause").innerHTML = "Pause";
     }
 }
 
@@ -260,7 +319,9 @@ function tick() {
             }
         } else {
             p.max = 1000;
-            p.value += 1000/(IMAGE_TIME_S * 1000 / 20);
+            if (!is_paused) {
+                p.value += 1000/(IMAGE_TIME_S * 1000 / 20);
+            }
             if (p.value >= 1000) {
                 next();
             }
@@ -271,13 +332,13 @@ function tick() {
     }
 }
 
-document.onkeypress = (e) => {
+document.onkeydown = (e) => {
     if (document.activeElement == document.getElementById("query")) return;
-    if (e.key == "d") {
-        next();
-    }
-    if (e.key == "a") {
+    if (e.key == "d" || e.key == "ArrowRight") {
         prev();
+    }
+    if (e.key == "a" || e.key == "ArrowLeft") {
+        next();
     }
 }
 
@@ -291,4 +352,10 @@ setInterval(() => {
 
 setTimeout(() => {
     search();
+    document.getElementById("rightarrow").onclick = (e) => {
+        prev();
+    }
+    document.getElementById("leftarrow").onclick = (e) => {
+        next();
+    }
 }, 10);
